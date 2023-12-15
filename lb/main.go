@@ -4,10 +4,33 @@ import (
 	"fmt"
 	"io"
 	"net"
+	"net/http"
+	"sync/atomic"
 )
 
-func handleCOnnection(conn net.Conn, backendAddr string) {
+var (
+	backendServers = []string{"127.0.0.1:8080", "127.0.0.1:8081", "127.0.0.1:8082"}
+	currentServer  uint64
+)
+
+func getNextBackendServer() string {
+	serverIndex := atomic.AddUint64(&currentServer, 1) % uint64(len(backendServers))
+	return backendServers[serverIndex]
+}
+
+func healthCheck(backendAddr string) {
+	response, err := http.Get("http://" + backendAddr)
+	if err != nil || response.StatusCode != 200 {
+		fmt.Printf("Server is unavailable: %s\n", err)
+		return
+	}
+
+}
+
+func handleConnection(conn net.Conn) {
 	defer conn.Close()
+
+	backendAddr := getNextBackendServer()
 
 	// Connect to backend server
 	backendConn, err := net.Dial("tcp", backendAddr)
@@ -29,7 +52,6 @@ func handleCOnnection(conn net.Conn, backendAddr string) {
 
 func main() {
 	lbAddr := ":80"
-	backendAddr := "localhost:8080"
 
 	listener, err := net.Listen("tcp", lbAddr)
 	if err != nil {
@@ -49,7 +71,7 @@ func main() {
 		}
 
 		fmt.Printf("Connection accepted from %s\n", conn.RemoteAddr())
-		go handleCOnnection(conn, backendAddr)
+		go handleConnection(conn)
 	}
 
 }
